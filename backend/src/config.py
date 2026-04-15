@@ -19,7 +19,15 @@ class Configuration(BaseModel):
     max_web_research_loops: int = Field(
         default=3,
         title="Research Depth",
-        description="Number of research iterations to perform",
+        description="Number of ReAct search iterations per task",
+    )
+    max_reflexion_rounds: int = Field(
+        default=1,
+        title="Max Reflexion Rounds",
+        description=(
+            "Number of self-reflection + supplemental search rounds after the initial summarize. "
+            "0 = disabled; 1 = one review pass with optional gap-filling re-search."
+        ),
     )
     local_llm: str = Field(
         default="llama3.2",
@@ -109,6 +117,7 @@ class Configuration(BaseModel):
             "lmstudio_base_url": os.getenv("LMSTUDIO_BASE_URL"),
             "ollama_base_url": os.getenv("OLLAMA_BASE_URL"),
             "max_web_research_loops": os.getenv("MAX_WEB_RESEARCH_LOOPS"),
+            "max_reflexion_rounds": os.getenv("MAX_REFLEXION_ROUNDS"),
             "fetch_full_page": os.getenv("FETCH_FULL_PAGE"),
             "strip_thinking_tokens": os.getenv("STRIP_THINKING_TOKENS"),
             "use_tool_calling": os.getenv("USE_TOOL_CALLING"),

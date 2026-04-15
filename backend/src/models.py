@@ -53,6 +53,11 @@ class TodoItem:
     # 实际完成的 ReAct 循环次数
     react_loop_count: int = field(default=0)
 
+    # ── Reflexion 记忆字段 ────────────────────────────────────────────
+    # 每轮 Reflexion 审查的完整输出（quality/gaps/reflection 等），
+    # 按轮次追加；下一轮审查时可作为历史参考，避免重复相同方向。
+    reflections: list[dict] = field(default_factory=list)
+
 
 @dataclass(kw_only=True)
 class SummaryState:

@@ -200,6 +200,78 @@ class ReActSearchService:
         return result
 
     # ------------------------------------------------------------------
+    # Supplemental search (used by Reflexion)
+    # ------------------------------------------------------------------
+
+    def execute_targeted(
+        self,
+        task: TodoItem,
+        state: SummaryState,
+        queries: list[str],
+        step: Optional[int] = None,
+    ) -> ReActSearchResult:
+        """执行 Reflexion 指定的补充搜索，不经过 Observer 推断。
+
+        与 execute() 的区别：直接执行给定的 queries 列表，
+        每条 query 只搜索一次，不触发 ReAct 推断循环。
+        用于 Reflexion 发现缺口后的精准补充检索。
+        """
+        result = ReActSearchResult()
+        all_contexts: list[str] = []
+
+        for i, query in enumerate(queries):
+            logger.info(
+                "Reflexion supplemental search %d/%d | task='%s' | query='%s'",
+                i + 1,
+                len(queries),
+                task.title,
+                query,
+            )
+
+            search_payload, notices, answer_text, backend = dispatch_search(
+                query,
+                self._config,
+                state.research_loop_count + i,
+            )
+            result.all_notices.extend(notices)
+            result.backend = backend
+            result.queries_used.append(query)
+
+            result.search_events.append({
+                "type": "reflexion_search_step",
+                "task_id": task.id,
+                "index": i + 1,
+                "total": len(queries),
+                "query": query,
+                "backend": backend,
+                "step": step,
+            })
+            for notice in notices:
+                if notice:
+                    result.search_events.append({
+                        "type": "status",
+                        "message": notice,
+                        "task_id": task.id,
+                        "step": step,
+                    })
+
+            if not search_payload or not search_payload.get("results"):
+                logger.info("Reflexion supplemental search %d: empty results.", i + 1)
+                continue
+
+            sources_summary, context = prepare_research_context(
+                search_payload, answer_text, self._config
+            )
+            all_contexts.append(
+                f"[Reflexion 补充检索 {i + 1} | query=\"{query}\"]\n{context}"
+            )
+            result.sources_summary = sources_summary
+            result.loop_count = i + 1
+
+        result.merged_context = "\n\n---\n\n".join(all_contexts)
+        return result
+
+    # ------------------------------------------------------------------
     # Internal: THINK step
     # ------------------------------------------------------------------
 

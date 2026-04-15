@@ -22,6 +22,7 @@ from prompts import (
 from models import SummaryState, SummaryStateOutput, TodoItem
 from services.planner import PlanningService
 from services.react_search import ReActSearchService
+from services.reflexion import ReflexionService
 from services.reporter import ReportingService
 from services.summarizer import SummarizationService
 from services.tool_events import ToolCallTracker
@@ -73,6 +74,8 @@ class DeepResearchAgent:
         self.reporting = ReportingService(self.report_agent, self.config)
         # ReAct 搜索循环服务：替换原来的单次 dispatch_search 调用
         self.react_search = ReActSearchService(self.llm, self.config)
+        # Reflexion 审查服务：在每次总结后进行自我评估，驱动补充检索
+        self.reflexion = ReflexionService(self.llm, self.config)
         self._last_search_notices: list[str] = []
 
     # ------------------------------------------------------------------
@@ -393,6 +396,88 @@ class DeepResearchAgent:
             self._drain_tool_events(state)
 
         task.summary = summary_text.strip() if summary_text else "暂无可用信息"
+
+        # ── Reflexion 自我评估 + 补充检索闭环 ──────────────────────────
+        # 每轮流程：review → (若 fail) 补充搜索 → 重新总结 → 更新 task.summary
+        # 反思结果追加到 task.reflections 作为 memory，供后续轮次参考。
+        if self.config.max_reflexion_rounds > 0 and task.summary != "暂无可用信息":
+            accumulated_context = react_result.merged_context
+            for _ref_round in range(self.config.max_reflexion_rounds):
+                reflection = self.reflexion.review(task, task.summary, accumulated_context)
+                task.reflections.append(reflection)
+
+                if emit_stream:
+                    for event in self._drain_tool_events(state, step=step):
+                        yield event
+                    yield {
+                        "type": "reflexion_review",
+                        "task_id": task.id,
+                        "round": len(task.reflections),
+                        "quality": reflection.get("quality"),
+                        "evidence_sufficient": reflection.get("evidence_sufficient"),
+                        "source_diversity": reflection.get("source_diversity"),
+                        "time_sensitive_verified": reflection.get("time_sensitive_verified"),
+                        "conflicting_conclusions": reflection.get("conflicting_conclusions", []),
+                        "gaps": reflection.get("gaps", []),
+                        "supplemental_queries": reflection.get("supplemental_queries", []),
+                        "reflection": reflection.get("reflection", ""),
+                        "step": step,
+                    }
+
+                if ReflexionService.is_pass(reflection):
+                    logger.info(
+                        "Reflexion round %d PASS | task='%s'", len(task.reflections), task.title
+                    )
+                    break
+
+                supp_queries = [q for q in reflection.get("supplemental_queries", []) if q][:2]
+                if not supp_queries:
+                    logger.info(
+                        "Reflexion round %d FAIL but no supplemental queries | task='%s'",
+                        len(task.reflections),
+                        task.title,
+                    )
+                    break
+
+                # 执行 Reflexion 指定的补充搜索（不走 Observer 推断，直接精准执行）
+                supp_result = self.react_search.execute_targeted(
+                    task, state, supp_queries, step=step
+                )
+                task.react_queries.extend(supp_result.queries_used)
+
+                if emit_stream:
+                    for event in supp_result.search_events:
+                        yield event
+
+                if not supp_result.merged_context:
+                    break  # 补充搜索无结果，不再继续
+
+                # 将补充上下文累积进总上下文
+                accumulated_context = (
+                    accumulated_context
+                    + "\n\n=== Reflexion 补充检索 ===\n\n"
+                    + supp_result.merged_context
+                )
+                with self._state_lock:
+                    state.web_research_results.append(supp_result.merged_context)
+                    state.research_loop_count += max(supp_result.loop_count, 1)
+
+                # 用累积的完整上下文重新总结（非流式，避免重复刷屏）
+                new_summary = self.summarizer.summarize_task(state, task, accumulated_context)
+                if new_summary and new_summary != "暂无可用信息":
+                    task.summary = new_summary
+                    if emit_stream:
+                        for event in self._drain_tool_events(state, step=step):
+                            yield event
+                        yield {
+                            "type": "reflexion_update",
+                            "task_id": task.id,
+                            "round": len(task.reflections),
+                            "summary": task.summary,
+                            "step": step,
+                        }
+
+        # ── 任务完成 ───────────────────────────────────────────────────
         task.status = "completed"
 
         if emit_stream:
@@ -444,6 +529,8 @@ class DeepResearchAgent:
             # ReAct 可观测字段
             "react_queries": task.react_queries,
             "react_loop_count": task.react_loop_count,
+            # Reflexion 记忆字段
+            "reflections": task.reflections,
         }
 
     def _persist_final_report(self, state: SummaryState, report: str) -> dict[str, Any] | None:
