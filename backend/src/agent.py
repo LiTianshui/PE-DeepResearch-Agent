@@ -24,6 +24,7 @@ from services.planner import PlanningService
 from services.react_search import ReActSearchService
 from services.reflexion import ReflexionService
 from services.reporter import ReportingService
+from services.self_consistency import SelfConsistencyService
 from services.summarizer import SummarizationService
 from services.tool_events import ToolCallTracker
 
@@ -36,7 +37,9 @@ class DeepResearchAgent:
     def __init__(self, config: Configuration | None = None) -> None:
         """Initialise the coordinator with configuration and shared tools."""
         self.config = config or Configuration.from_env()
-        self.llm = self._init_llm()
+        self.llm = self._init_llm(temperature=0.0)
+        # SC 采样 LLM：较高温度保证候选多样性
+        self.sc_llm = self._init_llm(temperature=self.config.sc_temperature)
 
         self.note_tool = (
             NoteTool(workspace=self.config.notes_workspace)
@@ -69,8 +72,20 @@ class DeepResearchAgent:
             system_prompt=task_summarizer_instructions.strip(),
         )
 
-        self.planner = PlanningService(self.todo_agent, self.config)
-        self.summarizer = SummarizationService(self._summarizer_factory, self.config)
+        # Self-Consistency：采样 LLM 用高温度，Judge LLM 用确定性主 LLM
+        _sc_enabled = (
+            self.config.sc_plan_samples > 1 or self.config.sc_summary_samples > 1
+        )
+        self.sc_service: SelfConsistencyService | None = (
+            SelfConsistencyService(self.sc_llm, self.llm, self.config)
+            if _sc_enabled
+            else None
+        )
+
+        self.planner = PlanningService(self.todo_agent, self.config, sc_service=self.sc_service)
+        self.summarizer = SummarizationService(
+            self._summarizer_factory, self.config, sc_service=self.sc_service
+        )
         self.reporting = ReportingService(self.report_agent, self.config)
         # ReAct 搜索循环服务：替换原来的单次 dispatch_search 调用
         self.react_search = ReActSearchService(self.llm, self.config)
@@ -81,9 +96,12 @@ class DeepResearchAgent:
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
-    def _init_llm(self) -> HelloAgentsLLM:
-        """Instantiate HelloAgentsLLM following configuration preferences."""
-        llm_kwargs: dict[str, Any] = {"temperature": 0.0}
+    def _init_llm(self, temperature: float = 0.0) -> HelloAgentsLLM:
+        """Instantiate HelloAgentsLLM following configuration preferences.
+
+        temperature 参数允许为 Self-Consistency 采样创建高温度变体。
+        """
+        llm_kwargs: dict[str, Any] = {"temperature": temperature}
 
         model_id = self.config.llm_model_id or self.config.local_llm
         if model_id:

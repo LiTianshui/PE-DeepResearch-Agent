@@ -11,7 +11,7 @@ from hello_agents import ToolAwareSimpleAgent
 
 from models import SummaryState, TodoItem
 from config import Configuration
-from prompts import get_current_date, todo_planner_instructions
+from prompts import get_current_date, todo_planner_instructions, todo_planner_system_prompt
 from utils import strip_thinking_tokens
 
 logger = logging.getLogger(__name__)
@@ -24,20 +24,40 @@ TOOL_CALL_PATTERN = re.compile(
 class PlanningService:
     """Wraps the planner agent to produce structured TODO items."""
 
-    def __init__(self, planner_agent: ToolAwareSimpleAgent, config: Configuration) -> None:
+    def __init__(
+        self,
+        planner_agent: ToolAwareSimpleAgent,
+        config: Configuration,
+        sc_service=None,  # Optional[SelfConsistencyService]
+    ) -> None:
         self._agent = planner_agent
         self._config = config
+        self._sc = sc_service  # None = SC disabled
 
     def plan_todo_list(self, state: SummaryState) -> List[TodoItem]:
-        """Ask the planner agent to break the topic into actionable tasks."""
+        """Ask the planner agent to break the topic into actionable tasks.
 
+        若 sc_service 已注入且 sc_plan_samples > 1，则启用 Self-Consistency：
+        采样多组方案后由 Judge 评选最优，减少单次拆解过偏的概率。
+        """
         prompt = todo_planner_instructions.format(
             current_date=get_current_date(),
             research_topic=state.research_topic,
         )
 
-        response = self._agent.run(prompt)
-        self._agent.clear_history()
+        if self._sc and self._config.sc_plan_samples > 1:
+            logger.info(
+                "SC Planner: sampling %d plan candidates for topic '%s'",
+                self._config.sc_plan_samples,
+                state.research_topic,
+            )
+            response = self._sc.sample_and_select_plan(
+                system_prompt=todo_planner_system_prompt.strip(),
+                user_prompt=prompt,
+            )
+        else:
+            response = self._agent.run(prompt)
+            self._agent.clear_history()
 
         logger.info("Planner raw output (truncated): %s", response[:500])
 

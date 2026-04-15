@@ -29,6 +29,31 @@ class Configuration(BaseModel):
             "0 = disabled; 1 = one review pass with optional gap-filling re-search."
         ),
     )
+    sc_plan_samples: int = Field(
+        default=3,
+        title="Self-Consistency Plan Samples",
+        description=(
+            "Number of plan candidates to sample for Self-Consistency at the Planner node. "
+            "1 = disabled (single sample, no judge)."
+        ),
+    )
+    sc_summary_samples: int = Field(
+        default=3,
+        title="Self-Consistency Summary Samples",
+        description=(
+            "Number of summary candidates to sample for Self-Consistency at the Summarizer node. "
+            "1 = disabled (single sample, no judge)."
+        ),
+    )
+    sc_temperature: float = Field(
+        default=0.7,
+        title="Self-Consistency Sampling Temperature",
+        description=(
+            "Temperature used when generating SC candidates. "
+            "Higher value (0.5-1.0) produces more diverse candidates and better SC effect. "
+            "Does not affect the deterministic judge call."
+        ),
+    )
     local_llm: str = Field(
         default="llama3.2",
         title="Local Model Name",
@@ -118,6 +143,9 @@ class Configuration(BaseModel):
             "ollama_base_url": os.getenv("OLLAMA_BASE_URL"),
             "max_web_research_loops": os.getenv("MAX_WEB_RESEARCH_LOOPS"),
             "max_reflexion_rounds": os.getenv("MAX_REFLEXION_ROUNDS"),
+            "sc_plan_samples": os.getenv("SC_PLAN_SAMPLES"),
+            "sc_summary_samples": os.getenv("SC_SUMMARY_SAMPLES"),
+            "sc_temperature": os.getenv("SC_TEMPERATURE"),
             "fetch_full_page": os.getenv("FETCH_FULL_PAGE"),
             "strip_thinking_tokens": os.getenv("STRIP_THINKING_TOKENS"),
             "use_tool_calling": os.getenv("USE_TOOL_CALLING"),

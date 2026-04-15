@@ -12,6 +12,7 @@ from config import Configuration
 from utils import strip_thinking_tokens
 from services.notes import build_note_guidance
 from services.text_processing import extract_chain_output, strip_tool_calls
+from prompts import task_summarizer_instructions
 
 
 def _apply_chain_data(task: TodoItem, data: dict) -> None:
@@ -44,26 +45,34 @@ class SummarizationService:
         self,
         summarizer_factory: Callable[[], ToolAwareSimpleAgent],
         config: Configuration,
+        sc_service=None,  # Optional[SelfConsistencyService]
     ) -> None:
         self._agent_factory = summarizer_factory
         self._config = config
+        self._sc = sc_service  # None = SC disabled
 
     def summarize_task(self, state: SummaryState, task: TodoItem, context: str) -> str:
         """Generate a task-specific summary using the summarizer agent.
 
-        同时解析 <chain_output> 契约块，将 claims/evidence/missing_info/confidence
-        写入 task，供 Reporter 阶段直接消费。
+        若 sc_service 已注入且 sc_summary_samples > 1，则启用 Self-Consistency：
+        采样多份总结后由 Judge 评选证据覆盖最好的那份，再解析 chain_output。
         """
-
         prompt = self._build_prompt(state, task, context)
 
-        agent = self._agent_factory()
-        try:
-            response = agent.run(prompt)
-        finally:
-            agent.clear_history()
+        if self._sc and self._config.sc_summary_samples > 1:
+            summary_text = self._sc.sample_and_select_summary(
+                system_prompt=task_summarizer_instructions.strip(),
+                user_prompt=prompt,
+                task=task,
+            )
+        else:
+            agent = self._agent_factory()
+            try:
+                response = agent.run(prompt)
+            finally:
+                agent.clear_history()
+            summary_text = response.strip()
 
-        summary_text = response.strip()
         if self._config.strip_thinking_tokens:
             summary_text = strip_thinking_tokens(summary_text)
 
@@ -78,9 +87,50 @@ class SummarizationService:
     def stream_task_summary(
         self, state: SummaryState, task: TodoItem, context: str
     ) -> Tuple[Iterator[str], Callable[[], str]]:
-        """Stream the summary text for a task while collecting full output."""
+        """Stream the summary text for a task while collecting full output.
 
+        若 SC 启用（sc_summary_samples > 1），先批量采样多份总结、由 Judge 选出
+        最优，再以伪流式方式一次性 yield 出全文（用户仍能看到内容出现）。
+        若 SC 关闭，走原有的逐 token 流式路径。
+        """
         prompt = self._build_prompt(state, task, context)
+
+        # ── SC 路径：批量采样 → Judge → 伪流式 ─────────────────────────
+        if self._sc and self._config.sc_summary_samples > 1:
+            winning = self._sc.sample_and_select_summary(
+                system_prompt=task_summarizer_instructions.strip(),
+                user_prompt=prompt,
+                task=task,
+            )
+            if self._config.strip_thinking_tokens:
+                winning = strip_thinking_tokens(winning)
+
+            # 提取并存储 chain_output，返回清理后的 visible text
+            chain_data_holder: dict = {}
+            cleaned_holder: list[str] = [""]
+
+            def sc_get_summary() -> str:
+                text = winning
+                chain_data, text = extract_chain_output(text)
+                chain_data_holder.update(chain_data)
+                _apply_chain_data(task, chain_data)
+                return strip_tool_calls(text).strip()
+
+            # 提前解析，供后续 get_summary() 直接返回
+            final_text = sc_get_summary()
+            cleaned_holder[0] = final_text
+
+            def sc_generator() -> Iterator[str]:
+                # 一次性 yield 全文（前端仍会显示）
+                if cleaned_holder[0]:
+                    yield cleaned_holder[0]
+
+            def sc_get_summary_fn() -> str:
+                return cleaned_holder[0]
+
+            return sc_generator(), sc_get_summary_fn
+
+        # ── 原有流式路径 ─────────────────────────────────────────────────
         remove_thinking = self._config.strip_thinking_tokens
         raw_buffer = ""
         visible_output = ""
