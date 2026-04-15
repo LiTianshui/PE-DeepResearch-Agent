@@ -46,17 +46,33 @@ class PlanningService:
 
         for idx, item in enumerate(tasks_payload, start=1):
             title = str(item.get("title") or f"任务{idx}").strip()
-            intent = str(item.get("intent") or "聚焦主题的关键问题").strip()
-            query = str(item.get("query") or state.research_topic).strip()
 
+            # subproblem 是新契约字段；向后兼容旧的 intent 字段
+            intent = str(
+                item.get("subproblem") or item.get("intent") or "聚焦主题的关键问题"
+            ).strip()
+
+            # search_query 是新契约字段；向后兼容旧的 query 字段
+            query = str(
+                item.get("search_query") or item.get("query") or state.research_topic
+            ).strip()
             if not query:
                 query = state.research_topic
+
+            # Planner 阶段契约扩展字段
+            search_intent = str(item.get("search_intent") or "").strip() or None
+            freshness_raw = str(item.get("freshness") or "both").strip().lower()
+            freshness = freshness_raw if freshness_raw in {"latest", "historical", "both"} else "both"
+            success_criteria = str(item.get("success_criteria") or "").strip() or None
 
             task = TodoItem(
                 id=idx,
                 title=title,
                 intent=intent,
                 query=query,
+                search_intent=search_intent,
+                freshness=freshness,
+                success_criteria=success_criteria,
             )
             todo_items.append(task)
 

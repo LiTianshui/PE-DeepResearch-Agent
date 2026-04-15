@@ -20,18 +20,58 @@ class ReportingService:
         self._config = config
 
     def generate_report(self, state: SummaryState) -> str:
-        """Generate a structured report based on completed tasks."""
+        """Generate a structured report based on completed tasks.
+
+        Reporter 是 Prompt Chaining 的第三阶段，优先消费上游的结构化契约：
+        - Planner 契约：intent/search_intent/freshness/success_criteria
+        - Summarizer 契约：claims/evidence/missing_info/confidence
+        同时保留原始 summary 文本作为补充上下文。
+        """
 
         tasks_block = []
         for task in state.todo_items:
             summary_block = task.summary or "暂无可用信息"
             sources_block = task.sources_summary or "暂无来源"
+
+            # ── Planner 阶段契约 ──────────────────────────────────────
+            planner_lines = [f"- 子问题：{task.intent}"]
+            if task.search_intent:
+                planner_lines.append(f"- 检索意图：{task.search_intent}")
+            if task.freshness:
+                planner_lines.append(f"- 时效性：{task.freshness}")
+            if task.success_criteria:
+                planner_lines.append(f"- 验收标准：{task.success_criteria}")
+            planner_section = "\n".join(planner_lines)
+
+            # ── Summarizer 阶段契约 ───────────────────────────────────
+            if task.claims:
+                claims_text = "\n".join(f"  {i+1}. {c}" for i, c in enumerate(task.claims))
+                evidence_text = (
+                    "\n".join(f"  {i+1}. {e}" for i, e in enumerate(task.evidence))
+                    if task.evidence
+                    else "  （暂无）"
+                )
+                missing_text = (
+                    "\n".join(f"  - {m}" for m in task.missing_info)
+                    if task.missing_info
+                    else "  （无缺口）"
+                )
+                confidence_text = task.confidence or "未知"
+                summarizer_section = (
+                    f"- 关键断言（claims）：\n{claims_text}\n"
+                    f"- 支撑证据（evidence）：\n{evidence_text}\n"
+                    f"- 信息缺口（missing_info）：\n{missing_text}\n"
+                    f"- 置信度（confidence）：{confidence_text}"
+                )
+            else:
+                # 无结构化契约时退回到纯文本总结
+                summarizer_section = f"- 任务总结（非结构化）：\n{summary_block}"
+
             tasks_block.append(
                 f"### 任务 {task.id}: {task.title}\n"
-                f"- 任务目标：{task.intent}\n"
-                f"- 检索查询：{task.query}\n"
+                f"**[Planner 契约]**\n{planner_section}\n"
+                f"**[Summarizer 契约]**\n{summarizer_section}\n"
                 f"- 执行状态：{task.status}\n"
-                f"- 任务总结：\n{summary_block}\n"
                 f"- 来源概览：\n{sources_block}\n"
             )
 

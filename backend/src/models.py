@@ -9,7 +9,13 @@ from typing_extensions import Annotated
 
 @dataclass(kw_only=True)
 class TodoItem:
-    """单个待办任务项。"""
+    """单个待办任务项。
+
+    Prompt Chaining 阶段契约字段：
+    - Planner 契约：search_intent / freshness / success_criteria
+    - Summarizer 契约：claims / evidence / missing_info / confidence
+    这些字段由对应阶段的 Agent 严格输出，并作为下一阶段的输入。
+    """
 
     id: int
     title: str
@@ -22,6 +28,24 @@ class TodoItem:
     note_id: Optional[str] = field(default=None)
     note_path: Optional[str] = field(default=None)
     stream_token: Optional[str] = field(default=None)
+
+    # ── Planner 阶段契约 ──────────────────────────────────────────────
+    # 检索意图（如"寻找最新数据"、"梳理技术原理"）
+    search_intent: Optional[str] = field(default=None)
+    # 时效性要求：latest | historical | both
+    freshness: str = field(default="both")
+    # 满意答案的评判标准（1-2 句）
+    success_criteria: Optional[str] = field(default=None)
+
+    # ── Summarizer 阶段契约 ───────────────────────────────────────────
+    # 关键 claim 列表（每条为独立的事实性断言）
+    claims: list[str] = field(default_factory=list)
+    # 每条 claim 对应的支撑证据/来源摘要
+    evidence: list[str] = field(default_factory=list)
+    # 本轮搜索未能覆盖的信息缺口
+    missing_info: list[str] = field(default_factory=list)
+    # 整体置信度：high | medium | low
+    confidence: Optional[str] = field(default=None)
 
 
 @dataclass(kw_only=True)
