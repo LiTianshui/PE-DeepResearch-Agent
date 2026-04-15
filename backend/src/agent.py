@@ -21,8 +21,8 @@ from prompts import (
 )
 from models import SummaryState, SummaryStateOutput, TodoItem
 from services.planner import PlanningService
+from services.react_search import ReActSearchService
 from services.reporter import ReportingService
-from services.search import dispatch_search, prepare_research_context
 from services.summarizer import SummarizationService
 from services.tool_events import ToolCallTracker
 
@@ -71,6 +71,8 @@ class DeepResearchAgent:
         self.planner = PlanningService(self.todo_agent, self.config)
         self.summarizer = SummarizationService(self._summarizer_factory, self.config)
         self.reporting = ReportingService(self.report_agent, self.config)
+        # ReAct 搜索循环服务：替换原来的单次 dispatch_search 调用
+        self.react_search = ReActSearchService(self.llm, self.config)
         self._last_search_notices: list[str] = []
 
     # ------------------------------------------------------------------
@@ -294,34 +296,32 @@ class DeepResearchAgent:
         emit_stream: bool,
         step: int | None = None,
     ) -> Iterator[dict[str, Any]]:
-        """Run search + summarization for a single task."""
+        """Run ReAct search loop + summarization for a single task.
+
+        原来的单次 dispatch_search 调用已替换为 ReActSearchService.execute()，
+        实现"推理 → 搜索 → 观察 → 重复"的动态检索循环。
+        """
         task.status = "in_progress"
 
-        search_result, notices, answer_text, backend = dispatch_search(
-            task.query,
-            self.config,
-            state.research_loop_count,
-        )
-        self._last_search_notices = notices
-        task.notices = notices
+        # ── ReAct 搜索循环（替换原 dispatch_search 单次调用）──────────
+        react_result = self.react_search.execute(task, state, step=step)
+        self._last_search_notices = react_result.all_notices
+        task.notices = react_result.all_notices
+        # 将所有轮次的搜索词和循环次数写入 task，供 Summarizer / 前端消费
+        task.react_queries = react_result.queries_used
+        task.react_loop_count = react_result.loop_count
 
         if emit_stream:
             for event in self._drain_tool_events(state, step=step):
                 yield event
+            # 将 ReAct 循环产生的所有步骤事件推送给前端
+            for event in react_result.search_events:
+                yield event
         else:
             self._drain_tool_events(state)
 
-        if notices and emit_stream:
-            for notice in notices:
-                if notice:
-                    yield {
-                        "type": "status",
-                        "message": notice,
-                        "task_id": task.id,
-                        "step": step,
-                    }
-
-        if not search_result or not search_result.get("results"):
+        # 无任何搜索结果 → 跳过本任务
+        if not react_result.merged_context:
             task.status = "skipped"
             if emit_stream:
                 for event in self._drain_tool_events(state, step=step):
@@ -343,18 +343,13 @@ class DeepResearchAgent:
             if not emit_stream:
                 self._drain_tool_events(state)
 
-        sources_summary, context = prepare_research_context(
-            search_result,
-            answer_text,
-            self.config,
-        )
-
-        task.sources_summary = sources_summary
+        task.sources_summary = react_result.sources_summary
 
         with self._state_lock:
-            state.web_research_results.append(context)
-            state.sources_gathered.append(sources_summary)
-            state.research_loop_count += 1
+            state.web_research_results.append(react_result.merged_context)
+            state.sources_gathered.append(react_result.sources_summary)
+            # 按实际执行的循环次数累加，而非固定 +1
+            state.research_loop_count += max(react_result.loop_count, 1)
 
         summary_text: str | None = None
 
@@ -364,15 +359,19 @@ class DeepResearchAgent:
             yield {
                 "type": "sources",
                 "task_id": task.id,
-                "latest_sources": sources_summary,
-                "raw_context": context,
+                "latest_sources": react_result.sources_summary,
+                "raw_context": react_result.merged_context,
                 "step": step,
-                "backend": backend,
+                "backend": react_result.backend,
+                "react_loop_count": react_result.loop_count,
+                "react_queries": react_result.queries_used,
                 "note_id": task.note_id,
                 "note_path": task.note_path,
             }
 
-            summary_stream, summary_getter = self.summarizer.stream_task_summary(state, task, context)
+            summary_stream, summary_getter = self.summarizer.stream_task_summary(
+                state, task, react_result.merged_context
+            )
             try:
                 for event in self._drain_tool_events(state, step=step):
                     yield event
@@ -390,7 +389,7 @@ class DeepResearchAgent:
             finally:
                 summary_text = summary_getter()
         else:
-            summary_text = self.summarizer.summarize_task(state, task, context)
+            summary_text = self.summarizer.summarize_task(state, task, react_result.merged_context)
             self._drain_tool_events(state)
 
         task.summary = summary_text.strip() if summary_text else "暂无可用信息"
@@ -442,6 +441,9 @@ class DeepResearchAgent:
             "note_id": task.note_id,
             "note_path": task.note_path,
             "stream_token": task.stream_token,
+            # ReAct 可观测字段
+            "react_queries": task.react_queries,
+            "react_loop_count": task.react_loop_count,
         }
 
     def _persist_final_report(self, state: SummaryState, report: str) -> dict[str, Any] | None:

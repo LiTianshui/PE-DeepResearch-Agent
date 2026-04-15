@@ -47,6 +47,12 @@ class TodoItem:
     # 整体置信度：high | medium | low
     confidence: Optional[str] = field(default=None)
 
+    # ── ReAct 循环可观测字段 ──────────────────────────────────────────
+    # 本任务实际执行的所有搜索词（按轮次顺序）
+    react_queries: list[str] = field(default_factory=list)
+    # 实际完成的 ReAct 循环次数
+    react_loop_count: int = field(default=0)
+
 
 @dataclass(kw_only=True)
 class SummaryState:

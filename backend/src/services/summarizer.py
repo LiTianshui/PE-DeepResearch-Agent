@@ -155,9 +155,9 @@ class SummarizationService:
         - 时效性要求（freshness）
         - 满意答案的验收标准（success_criteria）
         """
-        # 拼接 Planner 契约上下文
+        # ── Planner 阶段契约 ──────────────────────────────────────────
         planner_contract_lines = [
-            f"【Planner 阶段契约】",
+            "【Planner 阶段契约】",
             f"- 子问题（subproblem）：{task.intent}",
         ]
         if task.search_intent:
@@ -168,14 +168,29 @@ class SummarizationService:
             planner_contract_lines.append(f"- 验收标准（success_criteria）：{task.success_criteria}")
         planner_contract = "\n".join(planner_contract_lines)
 
+        # ── ReAct 循环可观测信息 ──────────────────────────────────────
+        # 告知 Summarizer：本任务经过了几轮搜索、每轮用了什么 query，
+        # 使其能跨轮次综合信息、识别各轮差异与信息演进。
+        react_section = ""
+        if task.react_queries:
+            loops = len(task.react_queries)
+            queries_str = "、".join(f'"{q}"' for q in task.react_queries)
+            react_section = (
+                f"\n【ReAct 搜索轮次信息（共 {loops} 轮）】\n"
+                f"- 依次使用的搜索词：{queries_str}\n"
+                "- 以下【搜索上下文】由多轮搜索结果合并而成，每段开头标有轮次标签；\n"
+                "  总结时请注意跨轮次综合，避免重复计算同一信息。\n"
+            )
+
         return (
             f"研究主题：{state.research_topic}\n"
             f"任务名称：{task.title}\n"
-            f"检索查询：{task.query}\n\n"
-            f"{planner_contract}\n\n"
-            f"【搜索上下文】\n{context}\n\n"
+            f"初始检索查询：{task.query}\n\n"
+            f"{planner_contract}"
+            f"{react_section}\n"
+            f"【搜索上下文（多轮 ReAct 合并）】\n{context}\n\n"
             f"{build_note_guidance(task)}\n"
             "请按照以上协作要求先同步笔记，然后严格遵循 <FORMAT> 输出：\n"
-            "（1）以 `## 任务总结` 开头的 Markdown 正文；\n"
+            "（1）以 `## 任务总结` 开头的 Markdown 正文，综合所有轮次信息；\n"
             "（2）紧随其后的 <chain_output> JSON 块（包含 claims/evidence/missing_info/confidence）。"
         )
