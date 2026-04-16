@@ -37,6 +37,23 @@ def _apply_chain_data(task: TodoItem, data: dict) -> None:
     if isinstance(confidence, str) and confidence.strip():
         task.confidence = confidence.strip().lower()
 
+    # ── RAG 真实性约束字段 ────────────────────────────────────────────
+    sources = data.get("sources")
+    if isinstance(sources, list) and sources:
+        valid_sources = [s for s in sources if isinstance(s, dict)]
+        if valid_sources:
+            task.source_citations = valid_sources
+
+    inferred_claims = data.get("inferred_claims")
+    if isinstance(inferred_claims, list):
+        valid_inferred = [i for i in inferred_claims if isinstance(i, int)]
+        if valid_inferred:
+            task.inferred_claims = valid_inferred
+
+    freshness_warnings = data.get("freshness_warnings")
+    if isinstance(freshness_warnings, list) and freshness_warnings:
+        task.freshness_warnings = [str(w) for w in freshness_warnings]
+
 
 class SummarizationService:
     """Handles synchronous and streaming task summarization."""

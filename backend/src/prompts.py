@@ -234,6 +234,27 @@ task_summarizer_instructions = """
 5. 内容需多维度拓展：原理、应用、优缺点、工程实践、对比、历史演变等。
 </GOAL>
 
+<RAG_TRUTHFULNESS_CONSTRAINTS>
+这是本系统最重要的质量约束，必须严格遵守：
+
+1. **来源绑定（Source Binding）**
+   - 每条 claim 必须绑定其来源，在 <chain_output> 的 sources 数组中给出对应条目；
+   - 来源信息包括：标题（title）、URL（url，如可提取）、发布日期（date，格式 YYYY-MM 或 YYYY）；
+   - 若某条 claim 无法追溯到具体来源（由多条信息综合推断得出），
+     必须在 inferred_claims 中记录该 claim 的 0-based 索引，并在 Markdown 中用「【综合推断】」标注。
+
+2. **推断性结论标注（Inferential Labeling）**
+   - 直接来自搜索结果原文/数据的断言 → 正常 claim，不加标注
+   - 由多条信息综合推理得出、无单一来源支撑的断言 → Markdown 中加「【综合推断】」前缀，
+     并在 inferred_claims 中记录该 claim 的索引
+
+3. **时效性验证（Freshness Check）**
+   - 当任务的 freshness=latest 时，若某条 claim 的来源日期超过 18 个月，
+     必须在 freshness_warnings 中添加一条告警，格式：
+     "claim N：来源日期为 YYYY-MM，距今较旧，建议验证最新状态"
+   - 若找到的信息均无明确日期，也需添加告警："claim N：来源日期未知，时效性不确定"
+</RAG_TRUTHFULNESS_CONSTRAINTS>
+
 <NOTES>
 - 任务笔记由规划专家创建，笔记 ID 会在调用时提供；请先调用 `[TOOL_CALL:note:{{"action":"read","note_id":"<note_id>"}}]` 获取最新状态。
 - 更新任务总结后，使用 `[TOOL_CALL:note:{{"action":"update","note_id":"<note_id>","task_id":"<task_id>","title":"任务 <task_id>: …","note_type":"task_state","tags":["deep_research","task_<task_id>"],"content":"..."}}]` 写回笔记。
@@ -243,30 +264,43 @@ task_summarizer_instructions = """
 <FORMAT>
 输出结构分两部分，顺序固定：
 
-**第一部分**：面向用户的 Markdown 总结（以 `## 任务总结` 开头，关键发现用列表展示）
+**第一部分**：面向用户的 Markdown 总结（以 `## 任务总结` 开头）
+- 证据支持的结论直接列出，推断性结论加「【综合推断】」前缀
+- 时效性告警信息在对应条目后用「⚠️ 时效性：...」标注
 
 **第二部分**：机器可解析的阶段契约，必须用 `<chain_output>` 标签包裹，紧跟在 Markdown 之后：
 
 <chain_output>
 {{
   "claims": [
-    "claim 1：一句话陈述一个独立的事实性断言",
-    "claim 2：..."
+    "claim 0：一句话陈述一个独立的事实性断言",
+    "claim 1：..."
   ],
   "evidence": [
-    "支撑 claim 1 的证据或数据（可含来源标题）",
-    "支撑 claim 2 的证据或数据"
+    "支撑 claim 0 的证据或数据（含来源标题）",
+    "支撑 claim 1 的证据"
+  ],
+  "sources": [
+    {{"claim_index": 0, "title": "来源标题", "url": "https://...", "date": "2024-03"}},
+    {{"claim_index": 1, "title": "另一来源", "url": null, "date": "2023"}}
+  ],
+  "inferred_claims": [2],
+  "freshness_warnings": [
+    "claim 1：来源日期为 2022-08，距今较旧，建议验证最新状态"
   ],
   "missing_info": [
-    "本次检索未能覆盖的信息点 1",
-    "..."
+    "本次检索未能覆盖的信息点"
   ],
   "confidence": "high|medium|low"
 }}
 </chain_output>
 
-注意事项：
-- claims 与 evidence 的条目数量必须一一对应；
+字段规则：
+- claims 与 evidence、sources 的条目数量必须一一对应（索引对齐）；
+- sources[n].url：能提取到真实 URL 则填写，否则设为 null；
+- sources[n].date：能确认发布日期则填写（YYYY 或 YYYY-MM），否则设为 null；
+- inferred_claims：无直接来源支撑的 claim 的 0-based 索引列表；
+- freshness_warnings：仅在 freshness=latest 且来源较旧时填写，否则为空列表；
 - 若任务无有效结果，claims 输出空列表，confidence 设为 "low"；
 - 最终输出中禁止残留 `[TOOL_CALL:...]` 指令。
 </FORMAT>
@@ -276,7 +310,7 @@ task_summarizer_instructions = """
 report_writer_instructions = """
 你是一名专业的分析报告撰写者。你是 Prompt Chaining 流水线的第三阶段（Reporter），只消费上游两个阶段的结构化契约输出：
 - Planner 契约：每个任务的 subproblem、search_intent、freshness、success_criteria
-- Summarizer 契约：每个任务的 claims（关键断言）、evidence（支撑证据）、missing_info（信息缺口）、confidence（置信度）
+- Summarizer 契约：每个任务的 claims（关键断言）、evidence（支撑证据）、source_citations（来源绑定）、inferred_claims（推断性结论索引）、freshness_warnings（时效性告警）、missing_info（信息缺口）、confidence（置信度）
 
 <CHAIN_INPUT_RULES>
 - 报告内容必须以 claims 和 evidence 为基础，不可凭空推断；
@@ -285,20 +319,39 @@ report_writer_instructions = """
 - 未被 claims 覆盖的结论需标注为"推断"而非"结论"。
 </CHAIN_INPUT_RULES>
 
+<TRUTHFULNESS_RULES>
+这是报告真实性的核心约束，必须严格遵守：
+
+1. **区分证据支持与推断性结论**
+   - 有直接来源支撑的 claims（不在 inferred_claims 中）→ 在"证据支持的结论"部分呈现，可直接作为结论陈述
+   - 在 inferred_claims 中的 claims（无单一来源、由多条信息综合推理）→ 在"推断性总结"部分呈现，必须以「【综合推断】」前缀标注，并说明推断依据
+
+2. **来源引用规范**
+   - 每条证据支持的结论后必须附注来源，格式：「（来源：标题，日期）」或「[标题](URL)」
+   - source_citations 中的条目与 claims 通过 claim_index 对应，报告中须将来源信息嵌入对应结论
+   - 若某条 claim 无 source_citation 条目，须在正文中注明"来源待补充"
+
+3. **时效性告警显示**
+   - freshness_warnings 中的每条告警必须在报告中对应位置显式呈现
+   - 格式：「⚠️ 时效性：[告警内容]」紧跟在对应结论之后
+   - 若无 freshness_warnings，此项略去不写
+</TRUTHFULNESS_RULES>
+
 <REPORT_TEMPLATE>
 1. **背景概览**：简述研究主题的重要性与上下文。
-2. **核心洞见**：提炼各任务中最重要的 claims，标注任务编号与置信度。
-3. **证据与数据**：引用 evidence 中的关键事实或指标，按任务分组。
+2. **证据支持的结论**：按任务分组，列出有来源支撑的 claims，每条结论附来源引用与时效性告警（如有）。
+3. **推断性总结**：列出 inferred_claims 对应的综合推断，以「【综合推断】」前缀标注，说明推断所依赖的证据基础。
 4. **信息缺口与风险**：汇总各任务的 missing_info，分析尚待验证的假设与潜在风险。
-5. **任务验收评估**：逐任务对照 success_criteria，说明是否已充分回答子问题。
-6. **参考来源**：按任务列出关键来源条目（标题 + 链接）。
+5. **任务验收评估**：逐任务对照 success_criteria，说明是否已充分回答子问题；标注 confidence 等级。
+6. **参考来源**：按任务列出所有 source_citations 条目（标题 + 链接 + 日期），统一汇总至此节。
 </REPORT_TEMPLATE>
 
 <REQUIREMENTS>
 - 报告使用 Markdown；
 - 各部分明确分节，禁止添加额外的封面或结语；
 - 若某部分信息缺失，说明"暂无相关信息"；
-- 引用来源时使用任务标题或来源标题，确保可追溯；
+- 推断性结论必须与证据支持的结论分开呈现，不可混用；
+- 所有来源引用须可追溯（标题或 URL 至少有其一）；
 - 输出给用户的内容中禁止残留 `[TOOL_CALL:...]` 指令。
 </REQUIREMENTS>
 

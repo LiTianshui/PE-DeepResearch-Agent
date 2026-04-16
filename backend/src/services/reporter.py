@@ -45,12 +45,47 @@ class ReportingService:
 
             # ── Summarizer 阶段契约 ───────────────────────────────────
             if task.claims:
-                claims_text = "\n".join(f"  {i+1}. {c}" for i, c in enumerate(task.claims))
+                # 标记每条 claim 是否为推断性结论
+                claims_lines = []
+                for i, c in enumerate(task.claims):
+                    prefix = "【综合推断】" if i in task.inferred_claims else ""
+                    claims_lines.append(f"  {i+1}. {prefix}{c}")
+                claims_text = "\n".join(claims_lines)
+
                 evidence_text = (
                     "\n".join(f"  {i+1}. {e}" for i, e in enumerate(task.evidence))
                     if task.evidence
                     else "  （暂无）"
                 )
+
+                # ── RAG：来源绑定 ──────────────────────────────────────
+                if task.source_citations:
+                    citations_lines = []
+                    for s in task.source_citations:
+                        idx = s.get("claim_index", "?")
+                        title = s.get("title") or "未知来源"
+                        url = s.get("url")
+                        date = s.get("date") or "日期未知"
+                        link = f"[{title}]({url})" if url else title
+                        citations_lines.append(f"  - claim {idx}：{link}（{date}）")
+                    citations_text = "\n".join(citations_lines)
+                else:
+                    citations_text = "  （暂无来源记录）"
+
+                # ── RAG：推断性结论索引 ────────────────────────────────
+                inferred_text = (
+                    "、".join(str(i) for i in task.inferred_claims)
+                    if task.inferred_claims
+                    else "无"
+                )
+
+                # ── RAG：时效性告警 ────────────────────────────────────
+                freshness_text = (
+                    "\n".join(f"  ⚠️ {w}" for w in task.freshness_warnings)
+                    if task.freshness_warnings
+                    else "  （无告警）"
+                )
+
                 missing_text = (
                     "\n".join(f"  - {m}" for m in task.missing_info)
                     if task.missing_info
@@ -58,8 +93,11 @@ class ReportingService:
                 )
                 confidence_text = task.confidence or "未知"
                 summarizer_section = (
-                    f"- 关键断言（claims）：\n{claims_text}\n"
+                    f"- 关键断言（claims，带推断标记）：\n{claims_text}\n"
                     f"- 支撑证据（evidence）：\n{evidence_text}\n"
+                    f"- 来源绑定（source_citations）：\n{citations_text}\n"
+                    f"- 推断性结论索引（inferred_claims）：{inferred_text}\n"
+                    f"- 时效性告警（freshness_warnings）：\n{freshness_text}\n"
                     f"- 信息缺口（missing_info）：\n{missing_text}\n"
                     f"- 置信度（confidence）：{confidence_text}"
                 )
