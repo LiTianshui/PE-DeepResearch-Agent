@@ -1,62 +1,299 @@
-# 项目名称
+**English** | [中文](README_CN.md)
 
-基于提示工程优化的自动化深度研究智能体
+# PE-DeepResearch-Agent
 
-Prompt Engineering-Optimized Automated Deep Research Agent (PE-DeepResearch-Agent)
-
-## 📝 项目简介
-
-传统的自动化研究工具在面对复杂开放式问题时，往往存在任务拆解不够深入、搜索结果噪声较多、信息整合不够稳定，以及总结内容容易出现幻觉等问题。  
-**PE-DeepResearch-Agent** 旨在解决这些问题。该项目以 [hello-agents](https://github.com/datawhalechina/hello-agents) 第 14 章中的 **Automated Deep Research Agent** 为基础，并结合 [Prompt-Engineering-Guide](https://github.com/dair-ai/Prompt-Engineering-Guide) 中的关键提示工程方法，对智能体在**规划、检索、反思和报告生成**等阶段进行系统性优化。
-
-本项目的目标不是简单地“优化几句提示词”，而是将 **Prompt Engineering** 作为一个可设计、可迭代、可评估的系统层，提升自动化深度研究智能体的可靠性、可追踪性和研究完整性。
+Prompt Engineering-Optimized Automated Deep Research Agent
 
 
-## 🎯 项目要解决的问题
+## 📝 Overview
 
-本项目主要面向以下几个痛点：
+Conventional automated research tools often struggle with complex, open-ended questions — sub-tasks are decomposed too shallowly, search results are noisy, summaries lack stable grounding, and final reports are prone to hallucination.
 
-- 自动化研究任务中，子任务拆解过于浅层，难以覆盖复杂问题的关键维度。
-- 搜索过程往往是一次性的，缺少基于中间结果的动态调整能力。
-- 信息总结容易出现事实遗漏、来源混杂或缺乏证据支撑。
-- 最终报告虽然语言流畅，但不一定具备足够的可验证性和可信度。
-- 缺少对研究结果的自我审查与补充检索机制，导致研究链路不完整。
+**PE-DeepResearch-Agent** addresses these issues. Built on top of the **Automated Deep Research Agent** from [hello-agents](https://github.com/datawhalechina/hello-agents) Chapter 14, it applies five prompt engineering techniques from the [Prompt-Engineering-Guide](https://github.com/dair-ai/Prompt-Engineering-Guide) to systematically improve the agent's **planning, retrieval, reflection, and report generation** stages.
 
-## ✨ 核心功能
-
-- **结构化任务规划**：将用户输入的研究主题拆解为多个清晰、可执行、可检索的子任务。
-- **迭代式搜索与查询改写**：根据阶段性结果动态调整检索策略，而不是仅执行一次固定搜索。
-- **基于证据的信息总结**：从搜索结果中抽取关键 claims、evidence 和 sources，降低幻觉风险。
-- **反思驱动的研究闭环**：在总结后增加 reviewer 机制，自动检查证据是否充分、来源是否多样、是否存在信息缺口。
-- **可追踪的最终报告生成**：将各子任务的结果整合为结构化研究报告，并尽可能保留来源与引用信息。
-
-## 🚀 与原项目相比的主要改进点
-
-- **Prompt Chaining**：强化阶段间的结构化协作。项目将复杂研究任务拆分为多个清晰阶段，并将前一阶段的结构化输出作为下一阶段的输入。相比宽泛的自由式 prompt，这种方式更有利于提升系统的稳定性、可控性和可调试性。
-
-- **ReAct 风格检索**：让搜索过程具备动态决策能力。系统不再采用线性的一次性搜索流程，而是结合推理与行动，让智能体根据当前结果决定下一步是补充检索、改写 query、验证已有结论，还是查找冲突观点，从而更接近真实研究过程。
-
-- **Reflexion 机制**：引入自我评估与自动补充检索。在每轮总结之后，系统会增加一个 reviewer 阶段，用于判断当前证据是否充分、来源是否单一、是否缺少时间敏感信息，以及是否存在尚未处理的矛盾结论。若结果不满足要求，系统将自动进入下一轮检索与修正。
-
-- **Self-Consistency**：用于关键节点的局部增强。项目计划在部分高价值环节引入 Self-Consistency，例如对子任务规划结果进行多版本采样与筛选，或对同一组搜索结果生成多个摘要后进行一致性选择，以降低单次生成偏差带来的不稳定性。
-
-- **RAG 与真实性约束**：强化证据绑定与可验证性。对于知识密集型和时效性较强的问题，系统将尽量通过外部检索结果来支撑关键结论，并在最终报告中区分“证据支持的结论”与“综合性推断”，以提升整体可信度。
-
-## 🛠️ 技术栈
-
-- **基础框架**：hello-agents
-- **提示工程方法**：Prompt Chaining、ReAct、Reflexion、Self-Consistency、RAG
-- **智能体能力**：任务规划、搜索编排、证据总结、反思审查、报告生成
-- **工具与 API**：Web Search API、LLM API、结构化输出解析与校验工具
-- **后端方向**：Python、FastAPI
-- **前端方向**：Vue3、TypeScript
+The goal is not to tweak a few prompt strings, but to treat **Prompt Engineering** as a designable, iterable, and evaluable system layer — improving the reliability, traceability, and research integrity of the automated pipeline.
 
 
-## 📄 许可证
+## 🎯 Problems Addressed
+
+- Sub-task decomposition is too shallow to cover the key dimensions of complex questions.
+- Search is a single-pass process with no dynamic adjustment based on intermediate results.
+- Summaries suffer from factual omissions, mixed sources, and weak evidence grounding.
+- Final reports are fluent but not necessarily verifiable or trustworthy.
+- No self-evaluation or gap-filling mechanism exists, leaving the research chain incomplete.
+- Single-pass generation at critical nodes produces unstable, high-variance outputs.
+
+
+## ✨ Key Features
+
+- **Structured Task Planning**: Decomposes a research topic into clear, executable sub-tasks, each carrying stage-contract fields for search intent, freshness requirements, and success criteria.
+- **Iterative Search with Query Rewriting**: A ReAct loop dynamically adjusts retrieval strategy based on intermediate results, with strategies including synonym expansion, sub-dimension focus, and recency filtering.
+- **Evidence-Grounded Summarization**: Extracts claims, evidence, and sources from search results; enforces source binding; and distinguishes inferred conclusions from evidence-backed ones.
+- **Reflexion-Driven Research Loop**: After each summarization, a Reviewer LLM scores four dimensions — evidence sufficiency, source diversity, recency, and contradiction — and triggers targeted gap-filling re-searches on failure.
+- **Self-Consistency at Critical Nodes**: Applies multi-sample voting at the two highest-variance nodes (Planner + Summarizer) to reduce single-pass bias without multiplying cost across the full pipeline.
+- **Traceable Report Generation**: Integrates structured contract data from all sub-tasks; distinguishes evidence-backed conclusions from inferential summaries; preserves source citations and freshness warnings.
+
+
+## 🔗 System Pipeline
+
+```
+User Input
+   │
+   ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  Planner (+ Self-Consistency)                                    │
+│  Decomposes topic into sub-tasks, each carrying:                 │
+│  search_intent / freshness / success_criteria                    │
+└──────────────────────┬───────────────────────────────────────────┘
+                       │ sub-task list
+                       ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  ReAct Search Loop (per sub-task)                                │
+│  Reason → Act(search) → Observe → Rewrite Query → Repeat        │
+│  Observer LLM decides DONE / CONTINUE with new query            │
+└──────────────────────┬───────────────────────────────────────────┘
+                       │ merged_context (with round labels)
+                       ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  Summarizer (+ Self-Consistency)                                    │
+│  Outputs structured <chain_output> block:                           │
+│  claims / evidence / sources / inferred_claims / freshness_warnings │
+└──────────────────────┬──────────────────────────────────────────────┘
+                       │ summary + contract data
+                       ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  Reflexion Reviewer                                              │
+│  4-dimension scoring: evidence / diversity / recency / conflict  │
+│  pass → continue │ fail → execute_targeted() → re-summarize     │
+└──────────────────────┬───────────────────────────────────────────┘
+                       │ all sub-tasks complete
+                       ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  Reporter                                                        │
+│  Consumes claims / evidence / source_citations / inferred_claims │
+│  Outputs structured report: evidence-backed vs. [Inferred];     │
+│  includes source citations and freshness warnings                │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+
+## 🚀 Improvements Over the Baseline
+
+### 1. Prompt Chaining — Typed Stage Contracts
+
+Replaces free-text handoffs between agents with **structured stage contracts**, ensuring every downstream stage only consumes validated upstream data.
+
+**Implementation:**
+- `models.py`: `TodoItem` gains 7 contract fields
+  - Planner contract: `search_intent` / `freshness` (latest \| historical \| both) / `success_criteria`
+  - Summarizer contract: `claims` / `evidence` / `missing_info` / `confidence`
+- `prompts.py`: All three stage prompts upgraded to strict contracts — Planner JSON expanded from 3 to 6 fields; Summarizer enforces `<chain_output>` XML block; Reporter adds `CHAIN_INPUT_RULES` requiring conclusions to trace back to upstream data
+- `services/text_processing.py`: New `extract_chain_output()` parses and strips the `<chain_output>` block
+- `services/planner.py` / `summarizer.py` / `reporter.py`: Full pipeline parses and consumes contract fields; graceful fallback to plain text when structured data is absent
+
+---
+
+### 2. ReAct — Dynamic Search Loop
+
+Replaces the single-pass search with a **Reason → Act(search) → Observe → Repeat** loop, up to a configurable maximum number of iterations per sub-task.
+
+**Implementation:**
+- `services/react_search.py` (new): `ReActSearchService` core engine
+  - `execute()`: loops within `max_web_research_loops` budget
+  - After each ACT, calls `_reason_next_action()` to invoke an Observer LLM
+  - Observer returns `DONE` or `CONTINUE + new query` with rewrite strategies (synonym expansion, sub-dimension focus, recency filter, controversy append, etc.)
+  - Results from each round are tagged and merged into `merged_context` for the Summarizer
+- `prompts.py`: New `react_observer_system_prompt` with `DECISION_RULES` and `QUERY_REWRITE_STRATEGIES`
+- `agent.py`: `_execute_task()` replaces single `dispatch_search` call with `react_search.execute()`; pushes `react_search_step` / `react_thought` events to the frontend
+- `models.py`: `TodoItem` gains `react_queries` (per-round query list) and `react_loop_count`
+
+---
+
+### 3. Reflexion — Self-Evaluation Closed Loop
+
+Inserts a **Reviewer LLM call** after each summarization step to assess quality across four dimensions; automatically triggers gap-filling re-searches on failure.
+
+**Implementation:**
+- `services/reflexion.py` (new): `ReflexionService` review engine
+  - `review()`: calls Reviewer LLM, returns `quality` / `gaps` / `supplemental_queries`
+  - `_build_prompt()`: injects Planner contract + Summarizer contract + ReAct search trace + accumulated reflection history (memory) to prevent repeated search directions
+  - `is_pass()`: static helper to evaluate `quality` field
+- `services/react_search.py`: New `execute_targeted()` runs Reflexion-specified queries directly without Observer inference; tags results with `[Reflexion Supplement N]`
+- `prompts.py`: New `reflexion_reviewer_system_prompt` with `EVALUATION_DIMENSIONS`, `QUALITY_THRESHOLD`, and `SUPPLEMENTAL_QUERY_RULES`
+- `agent.py`: Reflexion loop appended after `task.summary` is set; reflection results appended to `task.reflections` as memory for subsequent rounds
+- `config.py`: New `max_reflexion_rounds` (default 1, 0 = disabled)
+
+---
+
+### 4. Self-Consistency — Selective Sampling at Critical Nodes
+
+Applies SC to the two highest-impact nodes (Planner + Summarizer) rather than the full pipeline, reducing single-pass variance while keeping cost controlled.
+
+**Implementation:**
+- `services/self_consistency.py` (new): `SelfConsistencyService`
+  - Sampling phase uses `sc_llm` (high temperature) for diverse candidates; Judge phase uses main `llm` (temperature=0) for deterministic selection
+  - `sample_and_select_plan()`: N samples + Plan Judge → best plan response
+  - `sample_and_select_summary()`: N samples + Summary Judge → best summary response
+  - `_parse_judge_output()`: parses `best_index`; defaults to 0 on failure
+- `prompts.py`: New `sc_plan_judge_system_prompt` (5-dimension rubric: coverage breadth, complementarity, executability, etc.) and `sc_summary_judge_system_prompt` (5-dimension rubric: evidence coverage, accuracy, chain_output quality, etc.)
+- `agent.py`: `_init_llm()` refactored to support multi-temperature LLM instances; adds `self.sc_llm` and `self.sc_service` (initialized only when SC is enabled)
+- `config.py`: Three new SC config fields (see Configuration section)
+
+---
+
+### 5. RAG / Truthfulness Constraints — Evidence Binding and Verifiability
+
+Introduces strict **truthfulness constraints** at both the Summarizer output and Reporter generation stages, separating evidence-backed conclusions from inferential summaries and enforcing source citations and freshness warnings.
+
+**Implementation:**
+- `prompts.py`:
+  - Summarizer: New `<RAG_TRUTHFULNESS_CONSTRAINTS>` requiring each claim to cite a source (title / url / date); claims with no single source must be indexed in `inferred_claims` and labeled `[Inferred]`; sources older than 18 months trigger entries in `freshness_warnings` when `freshness=latest`
+  - Reporter: New `<TRUTHFULNESS_RULES>` splitting the report into evidence-backed conclusions and inferential summaries
+- `services/summarizer.py`: Extended `_apply_chain_data()` to parse three new RAG fields from `<chain_output>`: `sources → source_citations`, `inferred_claims`, `freshness_warnings`
+- `services/reporter.py`: Injects all RAG contract fields into the Reporter prompt; labels inferred claims with `[Inferred]`; appends `source_citations`, `freshness_warnings`, and `inferred_claims` index per task
+
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+```bash
+python --version  # Python 3.10 or higher
+node --version    # Node.js 16 or higher
+npm --version     # npm 8 or higher
+```
+
+### Backend
+
+**1. Create and activate a conda environment**
+
+```bash
+conda create -n deepresearch python=3.11 -y
+conda activate deepresearch
+```
+
+**2. Install dependencies**
+
+```bash
+cd PE-DeepResearch-Agent/backend
+python -m pip install "hello-agents==0.2.9" huggingface_hub \
+    fastapi "tavily-python>=0.5.0" "python-dotenv==1.0.1" "requests>=2.31.0" \
+    "openai>=1.12.0" "uvicorn[standard]>=0.32.0" "ddgs>=9.6.1" "loguru>=0.7.3"
+```
+
+**3. Configure environment variables**
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` and fill in at least these four fields:
+
+```env
+LLM_PROVIDER=custom
+LLM_MODEL_ID=your-model-name
+LLM_API_KEY=your-api-key
+LLM_BASE_URL=your-api-base-url
+```
+
+> The default search engine is `duckduckgo` — no API key required. To use Tavily, set `SEARCH_API=tavily` and add `TAVILY_API_KEY` in `.env`.
+
+**4. Start the backend**
+
+```bash
+python src/main.py
+```
+
+You should see:
+
+```
+INFO:     Started server process [12345]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+```
+
+### Frontend
+
+Open a new terminal window:
+
+```bash
+cd PE-DeepResearch-Agent/frontend
+npm install
+npm run dev
+```
+You should see:
+
+```
+  VITE v5.0.0  ready in 500 ms
+
+  ➜  Local:   http://localhost:5174/
+  ➜  Network: use --host to expose
+  ➜  press h + enter to show help
+```
+
+Then open your browser and visit `http://localhost:5173`.
+
+
+## ⚙️ Configuration
+
+All options can be overridden via environment variables or the `Configuration` object:
+
+| Field | Env Variable | Default | Description |
+|-------|-------------|---------|-------------|
+| `max_web_research_loops` | `MAX_WEB_RESEARCH_LOOPS` | `3` | Max ReAct search iterations per sub-task |
+| `max_reflexion_rounds` | `MAX_REFLEXION_ROUNDS` | `1` | Max Reflexion review rounds; `0` = disabled |
+| `sc_plan_samples` | `SC_PLAN_SAMPLES` | `3` | Planner SC sample count; `1` = disabled |
+| `sc_summary_samples` | `SC_SUMMARY_SAMPLES` | `3` | Summarizer SC sample count; `1` = disabled |
+| `sc_temperature` | `SC_TEMPERATURE` | `0.7` | SC sampling temperature; recommended range 0.5–1.0 |
+
+
+## 🛠️ Tech Stack
+
+- **Base Framework**: hello-agents
+- **Prompt Engineering Techniques**: Prompt Chaining, ReAct, Reflexion, Self-Consistency, RAG + Truthfulness Constraints
+- **Core Service Modules**:
+  - `services/react_search.py`: ReAct dynamic search loop engine
+  - `services/reflexion.py`: Reflexion self-evaluation review engine
+  - `services/self_consistency.py`: Self-Consistency sampling and Judge service
+  - `services/planner.py`: Structured task planning service
+  - `services/summarizer.py`: Contract-based summarization service
+  - `services/reporter.py`: RAG-aware report generation service
+- **Tools & APIs**: Web Search API (Tavily / Perplexity / DuckDuckGo / SearXNG), LLM API, structured output parsing
+- **Backend**: Python, FastAPI
+- **Frontend**: Vue3, TypeScript
+
+
+## 📁 Project Structure
+
+```
+PE-DeepResearch-Agent/
+├── backend/
+│   └── src/
+│       ├── agent.py               # Main agent coordinator
+│       ├── config.py              # Configuration (ReAct / Reflexion / SC params)
+│       ├── models.py              # Data models (TodoItem with stage-contract fields)
+│       ├── prompts.py             # System prompts for all stages
+│       ├── main.py                # FastAPI entrypoint
+│       └── services/
+│           ├── planner.py         # Task planning (SC-integrated)
+│           ├── react_search.py    # ReAct search loop + Reflexion targeted search
+│           ├── reflexion.py       # Reflexion review engine
+│           ├── self_consistency.py# SC sampling and Judge service
+│           ├── summarizer.py      # Summarization (SC + RAG contracts)
+│           ├── reporter.py        # Report generation (consumes RAG contract fields)
+│           ├── text_processing.py # chain_output parsing utility
+│           └── notes.py           # Note tool
+├── frontend/                      # Vue3 + TypeScript frontend
+├── LICENSE
+└── README.md
+```
+
+
+## 📄 License
 
 MIT License
 
-## 🙏 致谢
+## 🙏 Acknowledgements
 
-感谢 [Datawhale 社区](https://github.com/datawhalechina) 与 [hello-agents](https://github.com/datawhalechina/hello-agents) 项目提供自动化深度研究智能体的基础思路，  
-也感谢 [DAIR.AI](https://github.com/dair-ai) 与 [Prompt-Engineering-Guide](https://github.com/dair-ai/Prompt-Engineering-Guide) 项目提供系统化的提示工程方法参考。
+Thanks to the [Datawhale community](https://github.com/datawhalechina) and the [hello-agents](https://github.com/datawhalechina/hello-agents) project for the foundational deep research agent architecture, and to [DAIR.AI](https://github.com/dair-ai) and the [Prompt-Engineering-Guide](https://github.com/dair-ai/Prompt-Engineering-Guide) for the systematic prompt engineering reference.

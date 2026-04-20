@@ -4,7 +4,13 @@ from __future__ import annotations
 
 import json
 import sys
+from pathlib import Path
 from typing import Any, Dict, Iterator, Optional
+
+from dotenv import load_dotenv
+
+# 加载 backend/.env（从 src/ 向上一级查找）
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware

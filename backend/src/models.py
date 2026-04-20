@@ -53,6 +53,16 @@ class TodoItem:
     # 实际完成的 ReAct 循环次数
     react_loop_count: int = field(default=0)
 
+    # ── RAG 真实性约束字段 ────────────────────────────────────────────
+    # 来源绑定：每条 claim 对应的来源信息（{claim_index, title, url, date}）
+    # 由 Summarizer 从搜索结果中抽取，Reporter 用于生成带引用的结论
+    source_citations: list[dict] = field(default_factory=list)
+    # 推断性结论的 0-based 索引：这些 claims 由多条信息综合推理得出，
+    # 无直接来源支撑，Reporter 需将其与证据支持的结论分开呈现
+    inferred_claims: list[int] = field(default_factory=list)
+    # 时效性预警：针对 freshness=latest 任务中来源较旧或时效性不确定的条目
+    freshness_warnings: list[str] = field(default_factory=list)
+
     # ── Reflexion 记忆字段 ────────────────────────────────────────────
     # 每轮 Reflexion 审查的完整输出（quality/gaps/reflection 等），
     # 按轮次追加；下一轮审查时可作为历史参考，避免重复相同方向。
